@@ -1,9 +1,15 @@
-from flask import Flask, jsonify, make_response, request, abort
+from flask import Flask, jsonify, make_response, request, abort, render_template
+from flask_cors import CORS, cross_origin
 import json
 import sqlite3
 from time import gmtime, strftime
+from pymongo import MongoClient
 
-app= Flask(__name__)
+
+app = Flask(__name__)
+app.config.from_object(__name__)
+app.secret_key = 'F12Zr47j\3yX R~X@H!jmM]Lwf/,?KT'
+CORS(app)
 
 
 def list_users():
@@ -234,6 +240,16 @@ def get_tweet(user_id):
     return list_tweet(user_id)
 
 
+@app.route('/adduser')
+def adduser():
+    return render_template('adduser.html')
+
+
+@app.route('/addtweets')
+def addtweetjs():
+    return render_template('addtweets.html')
+
+
 @app.errorhandler(404)
 def resource_not_found(error):
     return make_response(jsonify({'error':'Resource not found!'}), 404)
@@ -242,7 +258,6 @@ def resource_not_found(error):
 @app.errorhandler(400)
 def invalid_request(error):
     return make_response(jsonify({'error': 'Bad Request'}), 400)
-
 
 
 if __name__ == "__main__":
