@@ -1,16 +1,24 @@
-from flask import Flask, jsonify, make_response, request, abort, render_template
+from flask import Flask, jsonify, make_response, request, abort, render_template,session,redirect,url_for
 from flask_cors import CORS, cross_origin
-import json
-import sqlite3
-import urllib.parse
+# import json
+# import sqlite3
+# import urllib.parse
+import bcrypt
 from time import gmtime, strftime
 from pymongo import MongoClient
 import random
+from flask_mongoalchemy import MongoAlchemy
+from flask_pymongo import PyMongo
 
+# Object creation
 app = Flask(__name__)
-app.config.from_object(__name__)
+# app.config.from_object(__name__)
 app.secret_key = 'F12Zr47j\3yX R~X@H!jmM]Lwf/,?KT'
-CORS(app)
+# CORS(app)
+
+# app.config['MONGOALCHEMY_DATABASE'] = 'app'
+# app.config['MONGOALCHEMY_CONNECTION_STRING'] = 'mongodb://localhost:27017/'
+app.config["MONGO_URI"] = 'mongodb://localhost:27017/cloud_native'
 
 # Define connection to MongoDB
 # username = urllib.parse.quote_plus('mongoadmin')
@@ -18,7 +26,9 @@ CORS(app)
 # connection = MongoClient("mongodb://%s:%s@0.0.0.0:27017/" % (username, password))
 # connection = MongoClient('0.0.0.0:27017', username='mongoadmin', password='secret')
 connection = MongoClient('127.0.0.1')
+db = MongoAlchemy()
 
+#mongo=PyMongo(app)
 
 # connection.the_database.authenticate('mongoadmin','')
 
@@ -76,8 +86,6 @@ def list_users():
 
 
 def list_user(user_id):
-    conn = sqlite3.connect('mydb.db')
-    print("Opened database successfully")
     api_list = []
     db = connection.cloud_native.users
     for i in db.find({'id': user_id}):
@@ -85,8 +93,6 @@ def list_user(user_id):
     if api_list == []:
         abort(404)
     return jsonify({'user_list': api_list})
-
-
 #    return jsonify(user)
 
 
@@ -171,6 +177,18 @@ def list_tweet(user_id):
     return jsonify(user)
 
 
+@app.route('/')
+def home():
+    if not session.get('logged_in'):
+        return render_template('login.html')
+    else:
+        return render_template('index.html', session=session['username'])
+
+@app.route('/index')
+def index():
+    return render_template('index.html')
+
+
 @app.route("/api/v1/info")
 def home_index():
     api_list = []
@@ -178,6 +196,54 @@ def home_index():
     for row in db.find():
         api_list.append(str(row))
     return jsonify({'api_version': api_list}), 200
+
+
+@app.route('/login', methods=['POST'])
+def do_admin_login():
+#    users = mongo.db.users
+    users = connection.cloud_native.users
+    api_list = []
+    login_user = users.find({'username': request.form['username']})
+    for i in login_user:
+        api_list.append(i)
+        print ("login user: ", api_list)
+        if api_list !=[]:
+            # print(api_list[0]['password'].decode('UTF-8'))
+            if api_list[0]['password'] ==bcrypt.hashpw(request.form['password'].encode('utf-8'), api_list[0]['password']):
+            # if api_list[0]['password'] == bcrypt.hashpw(request.form['password'].encode('utf-8'),
+            #                                                            api_list[0]['password']):
+                session['logged_in'] = api_list[0]['username']
+                return redirect(url_for('index'))
+        return "Invalid Authentication"
+    return "Invalid User"
+
+
+@app.route('/signup', methods=['GET', 'POST'])
+def signup():
+    if request.method=='POST':
+       # users = mongo.db.users
+        users = connection.cloud_native.users
+        api_list=[]
+        existing_user = users.find({'$or':[{"username":request.form['username']} ,{"email":request.form['email']}]})
+        for i in existing_user:
+            # print (str(i))
+            api_list.append(str(i))
+
+        # print (api_list)
+        if api_list == []:
+            users.insert({
+            "email": request.form['email'],
+            "id": random.randint(1,1000),
+            "name": request.form['name'],
+            "password": bcrypt.hashpw(request.form['pass'].encode('utf-8'), bcrypt.gensalt()),
+            "username": request.form['username']
+            })
+            session['username'] = request.form['username']
+            return redirect(url_for('home'))
+
+        return 'That user already exists'
+    else :
+        return render_template('signup.html')
 
 
 @app.route('/api/v1/users', methods=['GET'])
@@ -226,6 +292,36 @@ def update_user(user_id):
     return jsonify({'status': upd_user(user)}), 200
 
 
+@app.route('/profile', methods=['GET', 'POST'])
+def profile():
+    if request.method=='POST':
+        users = mongo.db.users
+        api_list=[]
+        existing_users = users.find({"username":session['username']})
+        for i in existing_users:
+            # print (str(i))
+            api_list.append(str(i))
+        user = {}
+        print (api_list)
+        if api_list != []:
+            print (request.form['email'])
+            user['email']=request.form['email']
+            user['name']= request.form['name']
+            user['password']=request.form['pass']
+            users.update({'username':session['username']},{'$set': user} )
+        else:
+            return 'User not found!'
+        return redirect(url_for('index'))
+    if request.method=='GET':
+        users = mongo.db.users
+        user=[]
+        print (session['username'])
+        existing_user = users.find({"username":session['username']})
+        for i in existing_user:
+            user.append(i)
+        return render_template('profile.html', name=user[0]['name'], username=user[0]['username'], password=user[0]['password'], email=user[0]['email'])
+
+
 # api/v2 route
 @app.route('/api/v2/tweets', methods=['GET'])
 def get_tweets():
@@ -272,3 +368,4 @@ def invalid_request(error):
 if __name__ == "__main__":
     create_mongodatabase()
     app.run(host='0.0.0.0', port=5000, debug=True)
+
